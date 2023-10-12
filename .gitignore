@@ -22,3 +22,4 @@ go.work
 
 out/
 bin/
+dist/
