@@ -1,0 +1,5 @@
+FROM scratch
+
+COPY waitdaemon /waitdaemon
+
+ENTRYPOINT ["/waitdaemon"]
