@@ -9,7 +9,9 @@ waitdaemon's main use cases are kexec-ing and rebooting a machine. Currently, in
 This has a few consequences.
 1. If/when the machine runs Tink worker again (via a network boot, for example), this action to be run again. The same issue with `STATE` not transistioning will continue to occur.
 2. Any entity watching and expecting the `STATE_SUCCESS` of the action and of the whole workflow will be unable to determine if the kexec or reboot occured or not. [CAPT](https://github.com/tinkerbell/cluster-api-provider-tinkerbell), for example.
-3. Poor user experience. A machine might have successfully kexec'd or rebooted but the `STATE` is not accurate.
+3. Poor user experience. A machine might have successfully kexec'd or rebooted but the `STATE` is not accurate. (This one is actually not solved by waitdaemon. A `STATE_SUCCESS` does not guarantee the action was successful.)  
+
+> NOTE: waitdaemon does not guarantee the action was successful! Using this image means that failures in running your container are not surfaced to Tink server and your workflow. You will need to check the Smee logs for details.
 
 ## Usage
 
