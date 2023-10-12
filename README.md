@@ -19,7 +19,7 @@ Here are two example actions:
 
 ```yaml
 - name: "reboot"
-  image: ghcr.io/jacobweinstock/waitdaemon:v0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
   timeout: 90
   pid: host
   command: ["reboot"]
@@ -32,7 +32,7 @@ Here are two example actions:
 
 ```yaml
 - name: "kexec"
-  image: ghcr.io/jacobweinstock/waitdaemon:v0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
   timeout: 90
   pid: host
   environment:
@@ -47,7 +47,7 @@ Here are two example actions:
 ### Required fields
 
 - ```yaml
-  image: ghcr.io/jacobweinstock/waitdaemon:v0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
   ```
 - This value will tell us the image to run after waiting the duration of `WAIT_SECONDS`.
   ```yaml
