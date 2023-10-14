@@ -66,3 +66,8 @@ docker_manifests:
   - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-amd64
   - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm64
   - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm
+- name_template: ghcr.io/jacobweinstock/waitdaemon:latest
+  image_templates:
+  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-amd64
+  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm64
+  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm
