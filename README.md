@@ -1,4 +1,5 @@
 # waitdaemon
+
 This is a container to be used as a Tinkerbell action. It has the following purposes:
 
 - Run any arbitrary container image with its accompanying envs, command, volumes, etc.
@@ -7,6 +8,7 @@ This is a container to be used as a Tinkerbell action. It has the following purp
 
 waitdaemon's main use cases are kexec-ing and rebooting a machine. Currently, in Tinkerbell, these action generally cause the `STATE` to never transition to `STATE_SUCCESS`.
 This has a few consequences.
+
 1. If/when the machine runs Tink worker again (via a network boot, for example), this action to be run again. The same issue with `STATE` not transistioning will continue to occur.
 2. Any entity watching and expecting the `STATE_SUCCESS` of the action and of the whole workflow will be unable to determine if the kexec or reboot occured or not. [CAPT](https://github.com/tinkerbell/cluster-api-provider-tinkerbell), for example.
 3. Poor user experience. A machine might have successfully kexec'd or rebooted but the `STATE` is not accurate. (This one is actually not solved by waitdaemon. A `STATE_SUCCESS` does not guarantee the action was successful.)  
@@ -19,7 +21,7 @@ Here are two example actions:
 
 ```yaml
 - name: "reboot"
-  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:latest
   timeout: 90
   pid: host
   command: ["reboot"]
@@ -32,7 +34,7 @@ Here are two example actions:
 
 ```yaml
 - name: "kexec"
-  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:latest
   timeout: 90
   pid: host
   environment:
@@ -47,14 +49,18 @@ Here are two example actions:
 ### Required fields
 
 - ```yaml
-  image: ghcr.io/jacobweinstock/waitdaemon:0.1.1
+  image: ghcr.io/jacobweinstock/waitdaemon:latest
   ```
+
 - This value will tell us the image to run after waiting the duration of `WAIT_SECONDS`.
+
   ```yaml
   environment:
     IMAGE: <your image>
-  ```  
+  ```
+
 - This is needed so we can create Docker containers that the Tink worker doesn't wait on.
+
   ```yaml
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -69,7 +75,7 @@ Here are two example actions:
 Under the hood, the waitdaemon is doing something akin to daemonizing or double forking a Linux process but for containers and a Tinkerbell action.
 All values you specify in your action. `command`, `volumes`, `pid`, `environment`, etc are propogated to your container image when it's run.
 
-```
+```txt
 ┌──────────────Action Container───────────────┐
 │                                             │
 │   image: ghcr.io/jacobweinstock/waitdaemon  │
