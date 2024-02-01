@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -142,6 +143,13 @@ func runUserImage(cli *client.Client, image string, hostname string) error {
 		return err
 	}
 	con.Config.Image = image
+	// remove the PATH env var from the User container so that we don't override the existing PATH
+	for i, env := range con.Config.Env {
+		if strings.HasPrefix(env, "PATH") {
+			con.Config.Env = append(con.Config.Env[:i], con.Config.Env[i+1:]...)
+			break
+		}
+	}
 
 	return runContainer(cli, con)
 }
