@@ -28,7 +28,7 @@ const (
 	// hostnameEnv is the name of the container that is running this process. Docker will set this.
 	hostnameEnv = "HOSTNAME"
 	// waitTimeEnv is the amount of time to wait before running the user image. This is set by the user. Default is 10 seconds.
-	waitTimeEnv = "WAIT_TIME"
+	waitTimeEnv = "WAIT_SECONDS"
 	// phaseSecondFork is the value of phaseEnv that indicates that the second fork should be run.
 	phaseSecondFork = "SECOND_FORK"
 	// dockerClientErrorCode is the exit code that should be used when the Docker client was not created successfully.
@@ -103,7 +103,7 @@ func secondFork(logger *slog.Logger, cl *client.Client, waitTime string, image s
 			t = time.Duration(i) * time.Second
 		}
 	}
-	logger.Info("waiting before running user image", "waitSeconds", t)
+	logger.Info("waiting before running user image", "waitSeconds", t.String())
 	time.Sleep(t)
 	logger.Info("running user image", "image", image)
 	if err := runUserImage(cl, image, hostname); err != nil {
