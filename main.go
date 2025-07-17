@@ -155,6 +155,13 @@ func runUserImage(cli *client.Client, image string, hostname string) error {
 }
 
 func pullImage(cli *client.Client, image string) error {
+	// Check if image already exists locally
+	_, _, err := cli.ImageInspectWithRaw(context.Background(), image)
+	if err == nil {
+		return nil
+	}
+
+	// Image doesn't exist locally, pull it
 	out, err := cli.ImagePull(context.Background(), image, types.ImagePullOptions{})
 	if err != nil {
 		return err
