@@ -17,6 +17,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 )
 
@@ -134,7 +135,7 @@ func runContainer(cli *client.Client, self types.ContainerJSON) error {
 		return err
 	}
 
-	return cli.ContainerStart(context.Background(), c.ID, types.ContainerStartOptions{})
+	return cli.ContainerStart(context.Background(), c.ID, container.StartOptions{})
 }
 
 func runUserImage(cli *client.Client, image string, hostname string) error {
@@ -154,15 +155,14 @@ func runUserImage(cli *client.Client, image string, hostname string) error {
 	return runContainer(cli, con)
 }
 
-func pullImage(cli *client.Client, image string) error {
+func pullImage(cli *client.Client, imageRef string) error {
 	// Check if image already exists locally
-	_, _, err := cli.ImageInspectWithRaw(context.Background(), image)
-	if err == nil {
+	if _, err := cli.ImageInspect(context.Background(), imageRef); err == nil {
 		return nil
 	}
 
 	// Image doesn't exist locally, pull it
-	out, err := cli.ImagePull(context.Background(), image, types.ImagePullOptions{})
+	out, err := cli.ImagePull(context.Background(), imageRef, image.PullOptions{})
 	if err != nil {
 		return err
 	}
