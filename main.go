@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -114,7 +113,7 @@ func secondFork(logger *slog.Logger, cl *client.Client, waitTime string, image s
 	return nil
 }
 
-func runContainer(cli *client.Client, self types.ContainerJSON) error {
+func runContainer(cli *client.Client, self container.InspectResponse) error {
 	config := &container.Config{
 		Image:        self.Config.Image,
 		AttachStdout: self.Config.AttachStdout,
