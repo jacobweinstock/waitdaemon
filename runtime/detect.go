@@ -19,12 +19,6 @@ const (
 	RuntimeAuto = "auto"
 )
 
-// DefaultCLIOrder is the probe order when auto-detecting a container CLI.
-var DefaultCLIOrder = [][]string{
-	{"docker"},
-	{"nerdctl"},
-}
-
 // Pingable is an optional interface that runtime implementations can satisfy
 // to verify daemon connectivity.
 type Pingable interface {
@@ -73,8 +67,12 @@ func autoDetect(dockerFn DockerFactory, ctrctlFn CtrctlFactory, nerdctlNamespace
 		}
 	}
 
+	// DefaultCLIOrder is the probe order when auto-detecting a container CLI.
+	defaultCLIOrder := [][]string{
+		{"nerdctl"},
+	}
 	// Fall back to CLI auto-detection (docker > nerdctl).
-	for _, cli := range DefaultCLIOrder {
+	for _, cli := range defaultCLIOrder {
 		rt, err := tryCtrctl(ctrctlFn, cli, nerdctlNamespace)
 		if err == nil {
 			return rt, nil
@@ -90,7 +88,7 @@ func tryDocker(dockerFn DockerFactory) (Runtime, error) {
 		return nil, fmt.Errorf("creating docker runtime: %w", err)
 	}
 	if p, ok := rt.(Pingable); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd // Using a magic number is fine here.
 		defer cancel()
 		if err := p.Ping(ctx); err != nil {
 			_ = rt.Close()
@@ -111,7 +109,7 @@ func tryCtrctl(ctrctlFn CtrctlFactory, cli []string, nerdctlNamespace string) (R
 		return nil, fmt.Errorf("creating ctrctl runtime with %v: %w", cli, err)
 	}
 	if p, ok := rt.(Pingable); ok {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd // Using a magic number is fine here.
 		defer cancel()
 		if err := p.Ping(ctx); err != nil {
 			_ = rt.Close()

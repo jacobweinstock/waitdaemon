@@ -1,5 +1,5 @@
 // Package runtime provides an abstraction over container runtimes (Docker, containerd).
-package runtime
+package runtime //nolint:revive // this name is fine.
 
 import "context"
 
