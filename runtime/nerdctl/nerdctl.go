@@ -65,8 +65,13 @@ type mountEntry struct {
 	Type        string `json:"Type"`
 	Source      string `json:"Source"`
 	Destination string `json:"Destination"`
-	Mode        string `json:"Mode"`
-	RW          bool   `json:"RW"`
+	// Target is an alias for Destination used by some nerdctl/containerd versions.
+	Target string `json:"Target"`
+	Mode   string `json:"Mode"`
+	RW     bool   `json:"RW"`
+	// Propagation holds mount propagation settings (e.g. "rprivate").
+	// Docker separates this from Mode; nerdctl may put it in either field.
+	Propagation string `json:"Propagation"`
 }
 
 // InspectSelf inspects the current container using os.Hostname() as the container ID.
@@ -128,29 +133,29 @@ func infoFromInspect(resp inspectResponse) runtime.ContainerInfo { //nolint:goco
 	binds := resp.HostConfig.Binds
 	if len(binds) == 0 && len(resp.Mounts) > 0 { //nolint:nestif // fine for now.
 		for _, m := range resp.Mounts {
-			if m.Type != "bind" {
+			if !strings.EqualFold(m.Type, "bind") {
+				continue
+			}
+			// Resolve destination: some nerdctl/containerd versions use
+			// "Target" instead of "Destination".
+			dest := m.Destination
+			if dest == "" {
+				dest = m.Target
+			}
+			if dest == "" {
 				continue
 			}
 			// Skip nerdctl-internal mounts. nerdctl creates per-container temp
 			// directories (e.g. /tmp/tink-dns-XXXXX/) for /etc/resolv.conf,
 			// /etc/hosts, and /etc/hostname. These sources won't exist for a
 			// new container and nerdctl will create its own.
-			if isNerdctlInternalMount(m.Destination) {
+			if isNerdctlInternalMount(dest) {
 				continue
 			}
-			bind := m.Source + ":" + m.Destination
-			if m.Mode != "" {
-				// nerdctl Mode includes the mount type (e.g. "bind,rprivate,rw").
-				// Strip "bind" since it's the type, not a volume option.
-				var opts []string
-				for _, o := range strings.Split(m.Mode, ",") {
-					if o != "bind" {
-						opts = append(opts, o)
-					}
-				}
-				if len(opts) > 0 {
-					bind += ":" + strings.Join(opts, ",")
-				}
+			bind := m.Source + ":" + dest
+			opts := mountOptions(m)
+			if len(opts) > 0 {
+				bind += ":" + strings.Join(opts, ",")
 			}
 			binds = append(binds, bind)
 		}
@@ -267,6 +272,54 @@ func detectPidMode() string {
 		}
 	}
 	return ""
+}
+
+// mountOptions builds the volume option string from a mount entry's Mode,
+// Propagation, and RW fields. It normalises the output to be compatible
+// with the --volume flag of both Docker and nerdctl CLIs.
+func mountOptions(m mountEntry) []string {
+	seen := make(map[string]bool)
+	var opts []string
+
+	// Collect options from Mode (nerdctl often packs everything here,
+	// e.g. "bind,rprivate,rw").
+	if m.Mode != "" {
+		for _, o := range strings.Split(m.Mode, ",") {
+			o = strings.TrimSpace(o)
+			if o == "" || strings.EqualFold(o, "bind") {
+				continue
+			}
+			lower := strings.ToLower(o)
+			if !seen[lower] {
+				seen[lower] = true
+				opts = append(opts, o)
+			}
+		}
+	}
+
+	// Collect mount propagation from the separate Propagation field
+	// (Docker uses this instead of Mode for propagation).
+	if m.Propagation != "" {
+		for _, o := range strings.Split(m.Propagation, ",") {
+			o = strings.TrimSpace(o)
+			if o == "" {
+				continue
+			}
+			lower := strings.ToLower(o)
+			if !seen[lower] {
+				seen[lower] = true
+				opts = append(opts, o)
+			}
+		}
+	}
+
+	// Honour the RW field: if it is false the mount is read-only.
+	// Add "ro" unless an explicit rw/ro option was already collected.
+	if !m.RW && !seen["ro"] && !seen["rw"] {
+		opts = append(opts, "ro")
+	}
+
+	return opts
 }
 
 // isNerdctlInternalMount returns true if the destination is a nerdctl-managed
