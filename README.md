@@ -6,6 +6,8 @@ This is a container to be used as a Tinkerbell action. It has the following purp
 - Wait an arbitrary amount of time before running your specified container image.
 - Immediately report back to the Tink server that the action has completed successfully.
 
+waitdaemon supports **Docker** (via the Docker SDK) and **nerdctl** (via the [ctrctl](https://github.com/lesiw/ctrctl) CLI wrapper library). By default it auto-detects which runtime is available (preferring the Docker SDK when the Docker socket is present, then probing for docker and nerdctl CLIs). You can override this with the `CONTAINER_RUNTIME` environment variable. A static `nerdctl` binary is bundled in the container image.
+
 waitdaemon's main use cases are kexec-ing and rebooting a machine. Currently, in Tinkerbell, these action generally cause the `STATE` to never transition to `STATE_SUCCESS`.
 This has a few consequences.
 
@@ -46,6 +48,27 @@ Here are two example actions:
     - /var/run/docker.sock:/var/run/docker.sock
 ```
 
+### With nerdctl (containerd)
+
+```yaml
+- name: "reboot"
+  image: ghcr.io/jacobweinstock/waitdaemon:latest
+  timeout: 90
+  pid: host
+  privileged: true
+  command: ["reboot"]
+  environment:
+    IMAGE: alpine
+    WAIT_SECONDS: 10
+    CONTAINER_RUNTIME: containerd
+  volumes:
+    - /run/containerd/containerd.sock:/run/containerd/containerd.sock
+    - /var/lib/containerd:/var/lib/containerd
+    - /var/lib/nerdctl:/var/lib/nerdctl
+    - /opt/cni/bin:/opt/cni/bin
+    - /etc/cni/net.d:/etc/cni/net.d
+```
+
 ### Required fields
 
 - ```yaml
@@ -59,16 +82,34 @@ Here are two example actions:
     IMAGE: <your image>
   ```
 
-- This is needed so we can create Docker containers that the Tink worker doesn't wait on.
+- When using `CONTAINER_RUNTIME=docker` (or auto-detect with Docker), the Docker socket mount is needed:
 
   ```yaml
   volumes:
     - /var/run/docker.sock:/var/run/docker.sock
   ```
 
+- When using `CONTAINER_RUNTIME=containerd` (or auto-detect with nerdctl), the following volume mounts are required:
+
+  ```yaml
+  volumes:
+    - /run/containerd/containerd.sock:/run/containerd/containerd.sock
+    - /var/lib/containerd:/var/lib/containerd
+    - /var/lib/nerdctl:/var/lib/nerdctl
+    - /opt/cni/bin:/opt/cni/bin
+    - /etc/cni/net.d:/etc/cni/net.d
+  ```
+
+  The container must also run as `privileged: true` so that nerdctl can perform overlay mounts for container filesystems.
+
 ### Optional Settings
 
 - `WAIT_SECONDS`: This is the number of seconds to wait before running your container.
+- `CONTAINER_RUNTIME`: The container runtime to use. Valid values are:
+  - `docker` — Use the Docker SDK (requires Docker socket mount).
+  - `containerd` — Backward-compatible alias: uses the bundled `nerdctl` CLI via the ctrctl wrapper.
+  - `auto` (default) — Prefers Docker SDK when the Docker socket is available, then falls back to CLI auto-detection (docker > nerdctl).
+- `CONTAINERD_NAMESPACE`: The containerd namespace nerdctl should operate in (default `tinkerbell`). Only applies when the resolved CLI is nerdctl (i.e. `CONTAINER_RUNTIME` is `containerd`, or auto selects nerdctl).
 
 ### Details
 

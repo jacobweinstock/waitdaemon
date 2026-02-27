@@ -1,3 +1,8 @@
+version: 2
+
+env:
+  - CONTAINER_REGISTRY={{ if index .Env "CONTAINER_REGISTRY" }}{{ .Env.CONTAINER_REGISTRY }}{{ else }}ghcr.io/jacobweinstock{{ end }}
+
 before:
   hooks:
     - go mod download
@@ -7,67 +12,34 @@ builds:
     goos:
       - linux
     goarch:
-      - arm
       - arm64
       - amd64
 checksum:
   name_template: 'checksums.txt'
 snapshot:
-  name_template: "{{ .Tag }}-next"
+  version_template: "{{ .Tag }}-next"
+release:
+  disable: "{{ if index .Env \"GITHUB_TOKEN\" }}false{{ else }}true{{ end }}"
 changelog:
   sort: asc
   filters:
     exclude:
       - '^docs:'
       - '^test:'
-dockers:
-- image_templates:
-  - "ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-amd64"
-  use: buildx
-  dockerfile: Dockerfile.goreleaser
-  build_flag_templates:
-  - "--pull"
-  - "--label=org.opencontainers.image.created={{.Date}}"
-  - "--label=org.opencontainers.image.name={{.ProjectName}}"
-  - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-  - "--label=org.opencontainers.image.version={{.Version}}"
-  - "--label=org.opencontainers.image.source={{.GitURL}}"
-  - "--platform=linux/amd64"
-- image_templates:
-  - "ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm64"
-  use: buildx
-  goarch: arm64
-  dockerfile: Dockerfile.goreleaser
-  build_flag_templates:
-  - "--pull"
-  - "--label=org.opencontainers.image.created={{.Date}}"
-  - "--label=org.opencontainers.image.name={{.ProjectName}}"
-  - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-  - "--label=org.opencontainers.image.version={{.Version}}"
-  - "--label=org.opencontainers.image.source={{.GitURL}}"
-  - "--platform=linux/arm64"
-- image_templates:
-  - "ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm"
-  use: buildx
-  goarch: arm
-  goarm: "6"
-  dockerfile: Dockerfile.goreleaser
-  build_flag_templates:
-  - "--pull"
-  - "--label=org.opencontainers.image.created={{.Date}}"
-  - "--label=org.opencontainers.image.name={{.ProjectName}}"
-  - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-  - "--label=org.opencontainers.image.version={{.Version}}"
-  - "--label=org.opencontainers.image.source={{.GitURL}}"
-  - "--platform=linux/arm/v6"
-docker_manifests:
-- name_template: ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}
-  image_templates:
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-amd64
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm64
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm
-- name_template: ghcr.io/jacobweinstock/waitdaemon:latest
-  image_templates:
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-amd64
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm64
-  - ghcr.io/jacobweinstock/waitdaemon:{{ .Version }}-arm
+dockers_v2:
+  - images:
+      - "{{ .Env.CONTAINER_REGISTRY }}/waitdaemon"
+    tags:
+      - "{{ .Version }}"
+      - latest
+      - "{{ if index .Env \"CUSTOM_TAG\" }}{{ .Env.CUSTOM_TAG }}{{ end }}"
+    dockerfile: Dockerfile.goreleaser
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.created": "{{.Date}}"
+      "org.opencontainers.image.name": "{{.ProjectName}}"
+      "org.opencontainers.image.revision": "{{.FullCommit}}"
+      "org.opencontainers.image.version": "{{.Version}}"
+      "org.opencontainers.image.source": "{{.GitURL}}"

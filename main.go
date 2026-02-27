@@ -8,16 +8,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/client"
+	"github.com/jacobweinstock/waitdaemon/runtime"
+	"github.com/jacobweinstock/waitdaemon/runtime/docker"
+	"github.com/jacobweinstock/waitdaemon/runtime/nerdctl"
 )
 
 const (
@@ -25,14 +24,18 @@ const (
 	phaseEnv = "PHASE"
 	// imageEnv is the name of the image that should be run for the second fork. This is set by the user.
 	imageEnv = "IMAGE"
-	// hostnameEnv is the name of the container that is running this process. Docker will set this.
-	hostnameEnv = "HOSTNAME"
 	// waitTimeEnv is the amount of time to wait before running the user image. This is set by the user. Default is 10 seconds.
 	waitTimeEnv = "WAIT_SECONDS"
+	// runtimeEnv is the container runtime to use. Valid values: "docker", "containerd", "auto". Default is "auto".
+	runtimeEnv = "CONTAINER_RUNTIME"
+	// nerdctlNamespaceEnv is the containerd namespace nerdctl should operate in. Default is "tinkerbell".
+	nerdctlNamespaceEnv = "CONTAINERD_NAMESPACE"
+	// defaultNerdctlNamespace is the default containerd namespace for nerdctl.
+	defaultNerdctlNamespace = "tinkerbell"
 	// phaseSecondFork is the value of phaseEnv that indicates that the second fork should be run.
 	phaseSecondFork = "SECOND_FORK"
-	// dockerClientErrorCode is the exit code that should be used when the Docker client was not created successfully.
-	dockerClientErrorCode = 12
+	// runtimeClientErrorCode is the exit code that should be used when the runtime client was not created successfully.
+	runtimeClientErrorCode = 12
 	// firstForkErrorCode is the exit code that should be used when the first fork was not run successfully.
 	firstForkErrorCode = 1
 	// secondForkErrorCode is the exit code that should be used when the second fork was not run successfully.
@@ -43,60 +46,83 @@ const (
 
 func main() {
 	phase := os.Getenv(phaseEnv)
-	image := os.Getenv(imageEnv)
-	hostname := os.Getenv(hostnameEnv)
+	img := os.Getenv(imageEnv)
 	waitTime := os.Getenv(waitTimeEnv)
+	runtimePref := os.Getenv(runtimeEnv)
+	nerdctlNS := os.Getenv(nerdctlNamespaceEnv)
+	if nerdctlNS == "" {
+		nerdctlNS = defaultNerdctlNamespace
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	logger.Info("starting waitdaemon", "phase", phase, "image", image, "hostname", hostname, "waitTime", waitTime)
+	logger.Info("starting waitdaemon", "phase", phase, "image", img, "waitTime", waitTime, "runtime", runtimePref, "nerdctlNamespace", nerdctlNS)
 
-	cl, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	rt, err := runtime.Detect(runtimePref, dockerRuntime, nerdctlRuntime, nerdctlNS)
 	if err != nil {
-		logger.Info("unable to create Docker client", "error", err)
-		os.Exit(dockerClientErrorCode)
+		logger.Info("unable to create container runtime client", "error", err)
+		os.Exit(runtimeClientErrorCode)
 	}
 
-	if hn, err := os.Hostname(); err == nil {
-		hostname = hn
-	}
 	statusCode := 0
 	switch phase {
 	case phaseSecondFork:
 		logger.Info("running second fork")
-		if err := secondFork(logger, cl, waitTime, image, hostname); err != nil {
+		if err := secondFork(logger, rt, waitTime, img); err != nil {
 			logger.Info("unable to run second fork image", "error", err)
 			statusCode = secondForkErrorCode
 		}
 	default:
 		logger.Info("running first fork")
-		if err := firstFork(cl, hostname); err != nil {
+		if err := firstFork(logger, rt, img); err != nil {
 			logger.Info("unable to run first fork image", "error", err)
 			statusCode = firstForkErrorCode
 		}
 	}
 
-	_ = cl.Close()
+	_ = rt.Close()
 	os.Exit(statusCode)
 }
 
-// firstFork starts a container in the background from the image that is currently
-// being used by the container. This must return immediately.
-func firstFork(cl *client.Client, hostname string) error {
-	con, err := cl.ContainerInspect(context.Background(), hostname)
+// dockerRuntime creates a Docker runtime client.
+func dockerRuntime() (runtime.Runtime, error) {
+	return docker.New()
+}
+
+// nerdctlRuntime creates a ctrctl CLI-wrapper runtime client.
+func nerdctlRuntime(cli []string) (runtime.Runtime, error) {
+	return nerdctl.New(cli)
+}
+
+// firstFork pulls the user image and starts a container in the background from the image
+// that is currently being used by the container. This must return immediately after
+// creating the second container. Image pull failures are propagated back to the caller.
+func firstFork(logger *slog.Logger, rt runtime.Runtime, img string) error {
+	ctx := context.Background()
+
+	// Pull the user's image before creating the second container.
+	// This ensures pull failures are reported back to Tink server.
+	if exists := rt.ImageExists(ctx, img); !exists {
+		logger.Info("pulling image", "image", img)
+		if err := rt.PullImage(ctx, img); err != nil {
+			return fmt.Errorf("pulling image %q: %w", img, err)
+		}
+	} else {
+		logger.Info("image already exists locally", "image", img)
+	}
+
+	info, err := rt.InspectSelf(ctx)
 	if err != nil {
 		return err
 	}
-	con.Config.Env = append(con.Config.Env, fmt.Sprintf("%v=%v", phaseEnv, phaseSecondFork))
+	info.Env = append(info.Env, fmt.Sprintf("%v=%v", phaseEnv, phaseSecondFork))
 
-	return runContainer(cl, con)
+	return rt.RunContainer(ctx, info)
 }
 
-func secondFork(logger *slog.Logger, cl *client.Client, waitTime string, image string, hostname string) error {
-	logger.Info("pulling image", "image", image)
-	if err := pullImage(cl, image); err != nil {
-		logger.Info("unable to pull image", "error", err)
-		return err
-	}
+func secondFork(logger *slog.Logger, rt runtime.Runtime, waitTime string, img string) error {
+	ctx := context.Background()
+
+	// Image was already pulled in firstFork, so we just wait and run.
 	t := defaultWaitTime
 	if s := waitTime; s != "" {
 		if i, err := strconv.Atoi(s); err == nil {
@@ -105,71 +131,37 @@ func secondFork(logger *slog.Logger, cl *client.Client, waitTime string, image s
 	}
 	logger.Info("waiting before running user image", "waitSeconds", t.String())
 	time.Sleep(t)
-	logger.Info("running user image", "image", image)
-	if err := runUserImage(cl, image, hostname); err != nil {
+
+	logger.Info("running user image", "image", img)
+	if err := runUserImage(ctx, rt, img); err != nil {
 		logger.Info("unable to run user defined image", "error", err)
-		os.Exit(1)
+		return err
 	}
+
 	return nil
 }
 
-func runContainer(cli *client.Client, self container.InspectResponse) error {
-	config := &container.Config{
-		Image:        self.Config.Image,
-		AttachStdout: self.Config.AttachStdout,
-		AttachStderr: self.Config.AttachStderr,
-		Cmd:          self.Config.Cmd,
-		Tty:          self.Config.Tty,
-		Env:          self.Config.Env,
-	}
-
-	hostConfig := &container.HostConfig{
-		Privileged: self.HostConfig.Privileged,
-		Binds:      self.HostConfig.Binds,
-		PidMode:    self.HostConfig.PidMode,
-	}
-
-	c, err := cli.ContainerCreate(context.Background(), config, hostConfig, nil, nil, "")
+func runUserImage(ctx context.Context, rt runtime.Runtime, img string) error {
+	info, err := rt.InspectSelf(ctx)
 	if err != nil {
 		return err
 	}
+	info.Image = img
 
-	return cli.ContainerStart(context.Background(), c.ID, container.StartOptions{})
-}
-
-func runUserImage(cli *client.Client, image string, hostname string) error {
-	con, err := cli.ContainerInspect(context.Background(), hostname)
-	if err != nil {
-		return err
+	// Strip the waitdaemon binary from the command.
+	// The inspected Cmd is [/waitdaemon, user-cmd...], but the user image
+	// doesn't have waitdaemon, so we pass only the user's command.
+	if len(info.Cmd) > 1 && info.Cmd[0] == os.Args[0] {
+		info.Cmd = info.Cmd[1:]
 	}
-	con.Config.Image = image
+
 	// remove the PATH env var from the User container so that we don't override the existing PATH
-	for i, env := range con.Config.Env {
+	for i, env := range info.Env {
 		if strings.HasPrefix(env, "PATH") {
-			con.Config.Env = append(con.Config.Env[:i], con.Config.Env[i+1:]...)
+			info.Env = append(info.Env[:i], info.Env[i+1:]...)
 			break
 		}
 	}
 
-	return runContainer(cli, con)
-}
-
-func pullImage(cli *client.Client, imageRef string) error {
-	// Check if image already exists locally
-	if _, err := cli.ImageInspect(context.Background(), imageRef); err == nil {
-		return nil
-	}
-
-	// Image doesn't exist locally, pull it
-	out, err := cli.ImagePull(context.Background(), imageRef, image.PullOptions{})
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(os.Stdout, out); err != nil {
-		return err
-	}
-
-	return nil
+	return rt.RunContainer(ctx, info)
 }
