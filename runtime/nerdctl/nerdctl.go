@@ -282,36 +282,10 @@ func mountOptions(m mountEntry) []string {
 	var opts []string
 
 	// Collect options from Mode (nerdctl often packs everything here,
-	// e.g. "bind,rprivate,rw").
-	if m.Mode != "" {
-		for _, o := range strings.Split(m.Mode, ",") {
-			o = strings.TrimSpace(o)
-			if o == "" || strings.EqualFold(o, "bind") {
-				continue
-			}
-			lower := strings.ToLower(o)
-			if !seen[lower] {
-				seen[lower] = true
-				opts = append(opts, o)
-			}
-		}
-	}
-
-	// Collect mount propagation from the separate Propagation field
-	// (Docker uses this instead of Mode for propagation).
-	if m.Propagation != "" {
-		for _, o := range strings.Split(m.Propagation, ",") {
-			o = strings.TrimSpace(o)
-			if o == "" {
-				continue
-			}
-			lower := strings.ToLower(o)
-			if !seen[lower] {
-				seen[lower] = true
-				opts = append(opts, o)
-			}
-		}
-	}
+	// e.g. "bind,rprivate,rw") and from the separate Propagation field
+	// (Docker uses Propagation instead of Mode for propagation).
+	collectCSV(&opts, seen, m.Mode)
+	collectCSV(&opts, seen, m.Propagation)
 
 	// Honour the RW field: if it is false the mount is read-only.
 	// Add "ro" unless an explicit rw/ro option was already collected.
@@ -320,6 +294,23 @@ func mountOptions(m mountEntry) []string {
 	}
 
 	return opts
+}
+
+// collectCSV splits a comma-separated option string, deduplicates entries
+// (case-insensitive), and appends novel options to opts. The "bind" keyword
+// is silently dropped because it is implied by the --volume flag.
+func collectCSV(opts *[]string, seen map[string]bool, csv string) {
+	for _, o := range strings.Split(csv, ",") {
+		o = strings.TrimSpace(o)
+		if o == "" || strings.EqualFold(o, "bind") {
+			continue
+		}
+		lower := strings.ToLower(o)
+		if !seen[lower] {
+			seen[lower] = true
+			*opts = append(*opts, o)
+		}
+	}
 }
 
 // isNerdctlInternalMount returns true if the destination is a nerdctl-managed

@@ -69,6 +69,26 @@ Here are two example actions:
     - /etc/cni/net.d:/etc/cni/net.d
 ```
 
+### With nerdctl + nsenter (no volume mounts)
+
+When `NSENTER_HOST` is enabled, all nerdctl CLI calls are prefixed with `nsenter -t 1 -m -u -i -n -p --` so they execute inside all host namespaces. This means nerdctl can access containerd's socket and state directories directly through the host filesystem, **eliminating the need for volume mounts** in the Tinkerbell template. The host must have `nerdctl` installed and available on its `PATH`. The container must still use `pid: host` so that nsenter can reach host PID 1.
+
+> NOTE: `NSENTER_HOST` only applies to the nerdctl/containerd runtime path — it has no effect when using the Docker SDK.
+
+```yaml
+- name: "reboot"
+  image: ghcr.io/jacobweinstock/waitdaemon:latest
+  timeout: 90
+  pid: host
+  privileged: true
+  command: ["reboot"]
+  environment:
+    IMAGE: alpine
+    WAIT_SECONDS: 10
+    CONTAINER_RUNTIME: containerd
+    NSENTER_HOST: "true"
+```
+
 ### Required fields
 
 - ```yaml
@@ -110,6 +130,7 @@ Here are two example actions:
   - `containerd` — Backward-compatible alias: uses the bundled `nerdctl` CLI via the ctrctl wrapper.
   - `auto` (default) — Prefers Docker SDK when the Docker socket is available, then falls back to CLI auto-detection (docker > nerdctl).
 - `CONTAINERD_NAMESPACE`: The containerd namespace nerdctl should operate in (default `tinkerbell`). Only applies when the resolved CLI is nerdctl (i.e. `CONTAINER_RUNTIME` is `containerd`, or auto selects nerdctl).
+- `NSENTER_HOST`: When set to `true` or `1`, all nerdctl CLI calls are prefixed with `nsenter -t 1 -m -u -i -n -p --` so they execute inside all host namespaces. This eliminates the need for volume mounts when using nerdctl/containerd. The host must have `nerdctl` installed. The container must still use `pid: host`. This setting only applies to the nerdctl/containerd runtime path — it has no effect when using the Docker SDK.
 
 ### Details
 

@@ -5,10 +5,10 @@ RUN apk add --no-cache curl tar gzip && \
     curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-${TARGETARCH}.tar.gz" \
     | tar -xzC /usr/local/bin nerdctl
 
-FROM scratch
+FROM alpine
 ARG TARGETPLATFORM
 
-COPY --from=nerdctl /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN apk add --no-cache util-linux
 COPY ${TARGETPLATFORM}/waitdaemon /waitdaemon
 COPY --from=nerdctl /usr/local/bin/nerdctl /usr/local/bin/nerdctl
 

@@ -30,6 +30,12 @@ const (
 	runtimeEnv = "CONTAINER_RUNTIME"
 	// nerdctlNamespaceEnv is the containerd namespace nerdctl should operate in. Default is "tinkerbell".
 	nerdctlNamespaceEnv = "CONTAINERD_NAMESPACE"
+	// nsenterHostEnv enables nsenter mode. When set to "true" or "1", all nerdctl
+	// CLI calls are prefixed with nsenter to enter host namespaces (mount, UTS, IPC,
+	// net, PID). This eliminates the need for volume mounts in the Tinkerbell template
+	// when using nerdctl/containerd. The container must still use pid: host.
+	// Has no effect when using the Docker SDK.
+	nsenterHostEnv = "NSENTER_HOST"
 	// defaultNerdctlNamespace is the default containerd namespace for nerdctl.
 	defaultNerdctlNamespace = "tinkerbell"
 	// phaseSecondFork is the value of phaseEnv that indicates that the second fork should be run.
@@ -45,6 +51,8 @@ const (
 )
 
 func main() {
+	nsenter := nsenterEnabled()
+
 	phase := os.Getenv(phaseEnv)
 	img := os.Getenv(imageEnv)
 	waitTime := os.Getenv(waitTimeEnv)
@@ -57,7 +65,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("starting waitdaemon", "phase", phase, "image", img, "waitTime", waitTime, "runtime", runtimePref, "nerdctlNamespace", nerdctlNS)
 
-	rt, err := runtime.Detect(runtimePref, dockerRuntime, nerdctlRuntime, nerdctlNS)
+	rt, err := runtime.Detect(runtimePref, dockerRuntime, nerdctlRuntime, nerdctlNS, nsenter)
 	if err != nil {
 		logger.Info("unable to create container runtime client", "error", err)
 		os.Exit(runtimeClientErrorCode)
@@ -156,12 +164,25 @@ func runUserImage(ctx context.Context, rt runtime.Runtime, img string) error {
 	}
 
 	// remove the PATH env var from the User container so that we don't override the existing PATH
-	for i, env := range info.Env {
-		if strings.HasPrefix(env, "PATH") {
-			info.Env = append(info.Env[:i], info.Env[i+1:]...)
-			break
-		}
-	}
+	info.Env = stripEnv(info.Env, "PATH")
 
 	return rt.RunContainer(ctx, info)
+}
+
+// nsenterEnabled reports whether the NSENTER_HOST env var is set to a truthy value.
+func nsenterEnabled() bool {
+	v := strings.ToLower(os.Getenv(nsenterHostEnv))
+	return v == "true" || v == "1"
+}
+
+// stripEnv removes all environment variables with the given key prefix from the slice.
+func stripEnv(envs []string, key string) []string {
+	prefix := key + "="
+	result := make([]string, 0, len(envs))
+	for _, env := range envs {
+		if !strings.HasPrefix(env, prefix) {
+			result = append(result, env)
+		}
+	}
+	return result
 }

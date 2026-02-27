@@ -16,6 +16,7 @@ RUN apk add --no-cache curl tar gzip && \
     | tar -xzC /usr/local/bin nerdctl
 
 FROM alpine
+RUN apk add --no-cache util-linux
 COPY --from=builder /waitdaemon /waitdaemon
 COPY --from=nerdctl /usr/local/bin/nerdctl /usr/local/bin/nerdctl
 
