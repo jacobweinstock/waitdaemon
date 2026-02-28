@@ -1,4 +1,4 @@
-// Package runtime provides an abstraction over container runtimes (Docker, containerd).
+// Package runtime provides an abstraction over container runtimes (Docker, nerdctl).
 package runtime //nolint:revive // this name is fine.
 
 import "context"
@@ -24,7 +24,7 @@ type ContainerInfo struct {
 	Binds []string
 	// PidMode is the PID namespace mode (e.g., "host").
 	PidMode string
-	// Snapshotter is the containerd snapshotter name (e.g., "overlayfs"). Only used by containerd runtime.
+	// Snapshotter is the containerd snapshotter name (e.g., "overlayfs"). Only used by nerdctl runtime.
 	Snapshotter string
 }
 

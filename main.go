@@ -26,17 +26,17 @@ const (
 	imageEnv = "IMAGE"
 	// waitTimeEnv is the amount of time to wait before running the user image. This is set by the user. Default is 10 seconds.
 	waitTimeEnv = "WAIT_SECONDS"
-	// runtimeEnv is the container runtime to use. Valid values: "docker", "containerd", "auto". Default is "auto".
+	// runtimeEnv is the container runtime to use. Valid values: "docker", "nerdctl", "auto". Default is "auto".
 	runtimeEnv = "CONTAINER_RUNTIME"
-	// nerdctlNamespaceEnv is the containerd namespace nerdctl should operate in. Default is "tinkerbell".
-	nerdctlNamespaceEnv = "CONTAINERD_NAMESPACE"
-	// nsenterHostEnv enables nsenter mode. When set to "true" or "1", all nerdctl
+	// nerdctlNamespaceEnv is the nerdctl namespace nerdctl should operate in. Default is "tinkerbell".
+	nerdctlNamespaceEnv = "NERDCTL_NAMESPACE"
+	// nerdctlHostEnv enables nsenter mode. When set to "true" or "1", all nerdctl
 	// CLI calls are prefixed with nsenter to enter host namespaces (mount, UTS, IPC,
 	// net, PID). This eliminates the need for volume mounts in the Tinkerbell template
-	// when using nerdctl/containerd. The container must still use pid: host.
+	// when using nerdctl. The container must still use pid: host.
 	// Has no effect when using the Docker SDK.
-	nsenterHostEnv = "NSENTER_HOST"
-	// defaultNerdctlNamespace is the default containerd namespace for nerdctl.
+	nerdctlHostEnv = "NERDCTL_HOST"
+	// defaultNerdctlNamespace is the default namespace for nerdctl.
 	defaultNerdctlNamespace = "tinkerbell"
 	// phaseSecondFork is the value of phaseEnv that indicates that the second fork should be run.
 	phaseSecondFork = "SECOND_FORK"
@@ -169,9 +169,13 @@ func runUserImage(ctx context.Context, rt runtime.Runtime, img string) error {
 	return rt.RunContainer(ctx, info)
 }
 
-// nsenterEnabled reports whether the NSENTER_HOST env var is set to a truthy value.
+// nsenterEnabled reports whether the NERDCTL_HOST env var is set to a truthy value.
+// When the variable is unset (empty), it defaults to true.
 func nsenterEnabled() bool {
-	v := strings.ToLower(os.Getenv(nsenterHostEnv))
+	v := strings.ToLower(os.Getenv(nerdctlHostEnv))
+	if v == "" {
+		return true
+	}
 	return v == "true" || v == "1"
 }
 

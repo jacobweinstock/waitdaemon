@@ -3,7 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"os"
+	"slices"
 	"time"
 )
 
@@ -13,8 +13,8 @@ const (
 
 	// RuntimeDocker selects the Docker SDK runtime.
 	RuntimeDocker = "docker"
-	// RuntimeContainerd is a backward-compatible alias that uses nerdctl via the ctrctl CLI wrapper.
-	RuntimeContainerd = "containerd"
+	// RuntimeNerdctl selects the nerdctl CLI runtime via the ctrctl wrapper.
+	RuntimeNerdctl = "nerdctl"
 	// RuntimeAuto auto-detects the available runtime (Docker SDK preferred, then CLI auto-detection).
 	RuntimeAuto = "auto"
 )
@@ -25,69 +25,58 @@ type Pingable interface {
 	Ping(ctx context.Context) error
 }
 
-// DockerFactory creates a Docker runtime client using the Docker SDK.
-type DockerFactory func() (Runtime, error)
+// DockerRuntime creates a Docker runtime client using the Docker SDK.
+type DockerRuntime func() (Runtime, error)
 
-// CtrctlFactory creates a ctrctl-backed runtime client using the given CLI command.
-type CtrctlFactory func(cli []string) (Runtime, error)
+// NerdctlRuntime creates a ctrctl-backed runtime client using the given CLI command.
+type NerdctlRuntime func(cli []string) (Runtime, error)
 
 // Detect selects and creates a runtime client based on the preference string.
 //
 // Preference values:
 //   - "docker": use Docker SDK, fail if unavailable
-//   - "containerd": alias for nerdctl via the ctrctl CLI wrapper (backward compat)
-//   - "auto" or "": auto-detect (Docker SDK preferred, then CLI auto-detection)
+//   - "nerdctl": use nerdctl via the ctrctl CLI wrapper
+//   - "auto" or "": auto-detect (Docker SDK preferred, then nerdctl)
 //
-// nerdctlNamespace is the containerd namespace passed to nerdctl via --namespace.
+// nerdctlNamespace is the namespace passed to nerdctl via --namespace.
 // It is only applied when the resolved CLI is nerdctl.
 //
 // When nsenterHost is true, nerdctl CLI invocations are prefixed with
 // nsenter -t 1 -m -u -i -n -p -- so they execute inside all host namespaces.
-// The nerdctl binary path is changed to /tmp/nerdctl (staged there by main).
+// nerdctl must already be installed on the host.
 // This has no effect on the Docker SDK path.
 //
-// The dockerFn and ctrctlFn factories construct the actual clients,
+// The dockerFn and nerdctlFn factories construct the actual clients,
 // keeping this function decoupled from the concrete implementations.
-func Detect(preference string, dockerFn DockerFactory, ctrctlFn CtrctlFactory, nerdctlNamespace string, nsenterHost bool) (Runtime, error) {
+func Detect(preference string, dockerFn DockerRuntime, nerdctlFn NerdctlRuntime, nerdctlNamespace string, nsenterHost bool) (Runtime, error) {
 	switch preference {
 	case RuntimeDocker:
 		return tryDocker(dockerFn)
-	case RuntimeContainerd:
-		// Backward compat: "containerd" means use ctrctl with nerdctl.
-		return tryCtrctl(ctrctlFn, []string{"nerdctl"}, nerdctlNamespace, nsenterHost)
+	case RuntimeNerdctl:
+		return tryNerdctl(nerdctlFn, nerdctlNamespace, nsenterHost)
 	case RuntimeAuto, "":
-		return autoDetect(dockerFn, ctrctlFn, nerdctlNamespace, nsenterHost)
+		return autoDetect(dockerFn, nerdctlFn, nerdctlNamespace, nsenterHost)
 	default:
 		return nil, fmt.Errorf("unknown runtime %q: valid values are %q, %q, %q",
-			preference, RuntimeDocker, RuntimeContainerd, RuntimeAuto)
+			preference, RuntimeDocker, RuntimeNerdctl, RuntimeAuto)
 	}
 }
 
-func autoDetect(dockerFn DockerFactory, ctrctlFn CtrctlFactory, nerdctlNamespace string, nsenterHost bool) (Runtime, error) {
+func autoDetect(dockerFn DockerRuntime, nerdctlFn NerdctlRuntime, nerdctlNamespace string, nsenterHost bool) (Runtime, error) {
 	// Prefer Docker SDK when the socket is available.
-	if socketExists(dockerSocket) {
-		rt, err := tryDocker(dockerFn)
-		if err == nil {
-			return rt, nil
-		}
+	if rt, err := tryDocker(dockerFn); err == nil {
+		return rt, nil
 	}
 
-	// DefaultCLIOrder is the probe order when auto-detecting a container CLI.
-	defaultCLIOrder := [][]string{
-		{"nerdctl"},
-	}
 	// Fall back to CLI auto-detection (docker > nerdctl).
-	for _, cli := range defaultCLIOrder {
-		rt, err := tryCtrctl(ctrctlFn, cli, nerdctlNamespace, nsenterHost)
-		if err == nil {
-			return rt, nil
-		}
+	if rt, err := tryNerdctl(nerdctlFn, nerdctlNamespace, nsenterHost); err == nil {
+		return rt, nil
 	}
 
 	return nil, fmt.Errorf("no container runtime found: checked Docker SDK (%s) and CLI auto-detection (docker, nerdctl)", dockerSocket)
 }
 
-func tryDocker(dockerFn DockerFactory) (Runtime, error) {
+func tryDocker(dockerFn DockerRuntime) (Runtime, error) {
 	rt, err := dockerFn()
 	if err != nil {
 		return nil, fmt.Errorf("creating docker runtime: %w", err)
@@ -103,23 +92,21 @@ func tryDocker(dockerFn DockerFactory) (Runtime, error) {
 	return rt, nil
 }
 
-// tryCtrctl creates a ctrctl runtime with the specified CLI command.
-// If the CLI is nerdctl and nerdctlNamespace is non-empty, --namespace is injected.
-// When nsenterHost is true, the CLI is prefixed with nsenter args so all calls
-// execute inside all host namespaces. nerdctl is expected to exist on the host.
-func tryCtrctl(ctrctlFn CtrctlFactory, cli []string, nerdctlNamespace string, nsenterHost bool) (Runtime, error) {
-	if len(cli) > 0 && cli[0] == "nerdctl" && nerdctlNamespace != "" {
-		cli = append([]string{cli[0], "--namespace", nerdctlNamespace}, cli[1:]...)
+// tryNerdctl will check if nerdctl is available.
+func tryNerdctl(nerdctlFn NerdctlRuntime, namespace string, useNsenter bool) (Runtime, error) {
+	cli := []string{"nerdctl"}
+	if namespace != "" {
+		cli = append(cli, "--namespace", namespace)
 	}
 
 	// When nsenter mode is enabled, prepend the nsenter prefix so every
 	// ctrctl invocation runs inside all host namespaces.
 	// nerdctl must already be installed on the host.
-	if nsenterHost {
-		cli = append([]string{"nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--"}, cli...)
+	if useNsenter {
+		cli = slices.Insert(cli, 0, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--")
 	}
 
-	rt, err := ctrctlFn(cli)
+	rt, err := nerdctlFn(cli)
 	if err != nil {
 		return nil, fmt.Errorf("creating ctrctl runtime with %v: %w", cli, err)
 	}
@@ -132,13 +119,4 @@ func tryCtrctl(ctrctlFn CtrctlFactory, cli []string, nerdctlNamespace string, ns
 		}
 	}
 	return rt, nil
-}
-
-func socketExists(path string) bool {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return false
-	}
-	// Accept both sockets and any file (Docker socket could be a regular file in some setups).
-	return fi.Mode()&os.ModeSocket != 0 || !fi.IsDir()
 }

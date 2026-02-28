@@ -65,7 +65,7 @@ type mountEntry struct {
 	Type        string `json:"Type"`
 	Source      string `json:"Source"`
 	Destination string `json:"Destination"`
-	// Target is an alias for Destination used by some nerdctl/containerd versions.
+	// Target is an alias for Destination used by some nerdctl versions.
 	Target string `json:"Target"`
 	Mode   string `json:"Mode"`
 	RW     bool   `json:"RW"`
@@ -136,7 +136,7 @@ func infoFromInspect(resp inspectResponse) runtime.ContainerInfo { //nolint:goco
 			if !strings.EqualFold(m.Type, "bind") {
 				continue
 			}
-			// Resolve destination: some nerdctl/containerd versions use
+			// Resolve destination: some nerdctl versions use
 			// "Target" instead of "Destination".
 			dest := m.Destination
 			if dest == "" {
