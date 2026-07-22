@@ -82,7 +82,7 @@ Here are two example Actions that will work with both HookOS and CaptainOS:
     image: ghcr.io/jacobweinstock/waitdaemon:latest
     timeout: 90
     pid: host
-    command: ["reboot"]
+    command: ["reboot", "-f"]
     environment:
       IMAGE: alpine
     volumes:
@@ -113,7 +113,7 @@ Here are two example Actions that will work with both HookOS and CaptainOS:
     image: ghcr.io/jacobweinstock/waitdaemon:latest
     timeout: 90
     pid: host
-    command: ["reboot"]
+    command: ["reboot", "-f"]
     environment:
       IMAGE: alpine
     volumes:
@@ -131,7 +131,7 @@ Here are two example Actions that will work with both HookOS and CaptainOS:
     image: ghcr.io/jacobweinstock/waitdaemon:latest
     timeout: 90
     pid: host
-    command: ["reboot"]
+    command: ["reboot", "-f"]
     environment:
       IMAGE: alpine
       CONTAINER_RUNTIME: docker
@@ -146,7 +146,7 @@ Here are two example Actions that will work with both HookOS and CaptainOS:
     image: ghcr.io/jacobweinstock/waitdaemon:latest
     timeout: 90
     pid: host
-    command: ["reboot"]
+    command: ["reboot", "-f"]
     environment:
       IMAGE: alpine
       CONTAINER_RUNTIME: nerdctl
@@ -159,7 +159,7 @@ Here are two example Actions that will work with both HookOS and CaptainOS:
     image: ghcr.io/jacobweinstock/waitdaemon:latest
     timeout: 90
     pid: host
-    command: ["reboot"]
+    command: ["reboot", "-f"]
     environment:
       IMAGE: alpine
       WAIT_SECONDS: 30
